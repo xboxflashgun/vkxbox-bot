@@ -3,6 +3,9 @@
 use LWP::UserAgent;
 use JSON::XS;
 use Data::Dumper;
+use Encode;
+
+use utf8;
 
 open F, "< vk-lp.apikey";
 my $apikey = <F>;
@@ -11,6 +14,7 @@ close F;
 
 my $im;
 my $up;		# json->updates
+my $us;		# json->user
 
 my $ua = LWP::UserAgent->new(
 	timeout => 120,
@@ -34,12 +38,13 @@ while(1)	{
 
 		my ($msgid, $minorid, $flags, $peerid, $timestamp, $text) = @$ev;
 
-		print "$msgid: flg=$flags, minorid=$minorid: $peerid\n$text\n";
-		mark_as_read($msgid);
+		print encode('utf-8', "$msgid: flg=$flags, minorid=$minorid: $peerid\n$text\n");
 
 		next if($flags & 2);		# it's an outgoing message
 
-		send_msg($peerid, "got '$text'");
+		mark_as_read($msgid);
+		get_user($peerid);
+		send_msg($peerid, "got '$text'\n" . $us->{'first_name'});
 
 	}
 
@@ -47,6 +52,19 @@ while(1)	{
 
 
 ###############################
+
+sub get_user {
+
+	my $userid = shift;
+	my $url = "https://api.vk.com/method/users.get?user_ids=$userid&fields=first_name,last_name,city,country,domain,photo_50,sex&v=5.199";
+
+	my $res = $ua->get($url);
+	die $res->status_line if $res->code != 200;
+
+	$us = (decode_json($res->decoded_content)->{'response'})->[0];
+	return;
+
+}
 
 sub send_msg {
 
