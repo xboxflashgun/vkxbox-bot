@@ -4,8 +4,12 @@ use LWP::UserAgent;
 use JSON::XS;
 use Data::Dumper;
 use Encode;
+use DBI;
 
 use utf8;
+
+use lib '.';
+use Xboxlive;
 
 open F, "< vk-lp.apikey";
 my $apikey = <F>;
@@ -22,15 +26,20 @@ my $ua = LWP::UserAgent->new(
 	keep_alive => 1,
 );
 
+my $dbh = DBI->connect("dbi:Pg:dbname=global;port=6432") || die;
+
+my $xbl = Xboxlive->new(1, $dbh);
+my $myxuid = $xbl->getmyxuid;
+
 $ua->default_header('Authorization', "Bearer $apikey");
 
 get_im_serv();
 
-print "Bot started with ts=".$im->{'ts'}."\n";
+print "Bot started with ts=".$im->{'ts'}." xuid=$myxuid\n";
 
 while(1)	{
 	
-	get_msg();
+	get_vk_msg();
 
 	foreach $ev (@$up)	{
 
@@ -52,6 +61,40 @@ while(1)	{
 
 
 ###############################
+
+sub get_xbox_msg {
+
+	my $msgs = decode_json($xbl->get("https://msg.xboxlive.com/users/xuid($myxuid)/inbox"));
+	my $total = $msgs->{'pagingInfo'}->{'totalItems'};
+
+	return if not $total;
+
+	print "Got some xbox message(s):\n";
+	foreach $msg (@{$msgs->{'results'}}) {
+
+		my $text = $msg->{'messageSummary'};
+		my $id   = $msg->{'header'}->{'id'};
+		my $xuid = $msg->{'header'}->{'senderXuid'};
+		my $gt   = $msg->{'header'}->{"sender"};
+
+		if($text =~ /(\d{6})/m) {
+
+			my $key = $1;
+			print "    key: $key (id=$id) xuid=$xuid ($gt)\n";
+
+		} else {
+
+			print encode('utf-8', "   unknown '$text' received from $gt ($xuid)\n");
+
+		}
+
+		sleep 1;
+		$xbl->delete("https://msg.xboxlive.com/users/xuid($myxuid)/inbox/$id");
+		sleep 1;
+
+	}
+
+}	
 
 sub get_user {
 
@@ -87,7 +130,7 @@ sub mark_as_read {
 }
 
 
-sub get_msg {
+sub get_vk_msg {
 
 	while(1)	{
 
@@ -100,6 +143,8 @@ sub get_msg {
 
 		$up = $json->{'updates'};
 		last if @$up;
+
+		get_xbox_msg();
 
 	}
 
