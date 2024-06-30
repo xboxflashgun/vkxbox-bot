@@ -53,7 +53,23 @@ while(1)	{
 
 		mark_as_read($msgid);
 		get_user($peerid);
-		send_msg($peerid, "got '$text'\n" . $us->{'first_name'});
+		if($text =~ /xbox/im)	{
+
+			my @row = $dbh->selectrow_array("select issued + interval '1 day' - now(), key from activekeys where id=$peerid");
+			
+			if(scalar(@row))	{
+
+				send_msg($peerid, "your pin is $row[1] is still active for the next $row[0]");
+
+			} else {
+			
+				my $key = gen_key();
+				$dbh->do("insert into activekeys values(now(), $peerid, $key)");
+				send_msg($peerid, "your pin is $key\n");
+
+			}
+
+		}
 
 	}
 
@@ -61,6 +77,21 @@ while(1)	{
 
 
 ###############################
+
+sub gen_key {
+
+	my $key;
+
+	do {
+
+		$key = int(100000 + rand() * 900000);
+
+	} while( $xbl->getcell("select key from activekeys where key='$key'"));
+
+	return $key;
+
+}
+
 
 sub get_xbox_msg {
 
